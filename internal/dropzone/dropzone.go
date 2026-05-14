@@ -240,7 +240,7 @@ func (s *Service) uploadFile(sourcePath, originalFilename string) error {
 	}
 
 	// Preserve original filename, sanitizing unsafe characters.
-	sanitized := strings.ReplaceAll(filepath.Base(originalFilename), " ", "_")
+	sanitized := sanitizeFilename(filepath.Base(originalFilename))
 	ext := filepath.Ext(sanitized)
 	base := strings.TrimSuffix(sanitized, ext)
 
@@ -313,6 +313,15 @@ func (s *Service) isAutoTranscriptionEnabled() bool {
 	}
 
 	return count > 0
+}
+
+// sanitizeFilename makes a filename safe for Linux, SMB (Synology/Windows), and macOS.
+func sanitizeFilename(name string) string {
+	name = strings.ReplaceAll(name, " ", "_")
+	for _, ch := range `\/:*?"<>|` {
+		name = strings.ReplaceAll(name, string(ch), "")
+	}
+	return name
 }
 
 // copyFile copies a file from source to destination

@@ -32,8 +32,7 @@ func (s *fileService) SaveUpload(fileHeader *multipart.FileHeader, destDir strin
 	}
 
 	// Preserve original filename, sanitizing unsafe characters.
-	originalName := filepath.Base(fileHeader.Filename)
-	originalName = strings.ReplaceAll(originalName, " ", "_")
+	originalName := sanitizeFilename(filepath.Base(fileHeader.Filename))
 	ext := filepath.Ext(originalName)
 	base := strings.TrimSuffix(originalName, ext)
 
@@ -87,6 +86,16 @@ func (s *fileService) RemoveDirectory(path string) error {
 
 func (s *fileService) ReadFile(path string) ([]byte, error) {
 	return os.ReadFile(path)
+}
+
+// sanitizeFilename makes a filename safe for Linux, SMB (Synology/Windows), and macOS.
+// Replaces spaces with underscores and removes characters illegal on SMB shares.
+func sanitizeFilename(name string) string {
+	name = strings.ReplaceAll(name, " ", "_")
+	for _, ch := range `\/:*?"<>|` {
+		name = strings.ReplaceAll(name, string(ch), "")
+	}
+	return name
 }
 
 func (s *fileService) FileExists(path string) (bool, error) {
