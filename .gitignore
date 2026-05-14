@@ -41,9 +41,9 @@ whisperx-env
 
 # internal/web
 env-data
-# main
+/main
+/server
 results.json
-# server
 !cmd/server/main.go
 test_word_conversion.go
 debug_whisperx_parsing.go
