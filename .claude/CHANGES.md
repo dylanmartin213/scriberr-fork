@@ -9,19 +9,33 @@ Upstream: https://github.com/rishikanthc/scriberr
 
 ```bash
 git fetch upstream
-git checkout homelab
+git checkout readability-and-tags
 git merge upstream/main
 # resolve any conflicts, then:
-git commit
+git commit && git push origin readability-and-tags
 ```
 
 The patches in this file document what to watch for when merging:
 - `internal/service/file_service.go` — SaveUpload filename logic
 - `internal/dropzone/dropzone.go` — uploadFile filename logic
+- `internal/transcription/adapters/whisperx_adapter.go` — WhisperX clone guard
 
 ---
 
-## [unreleased] Preserve original filenames on upload
+## [deployed] Fix WhisperX init on NFS-backed mounts
+
+**Problem**: On container restart, `PrepareEnvironment` called `git clone` into
+`whisperx-env/WhisperX` even though the directory already existed on the NAS from the
+previous run. Git exited 128 and WhisperX failed to initialize.
+
+**Files changed**: `internal/transcription/adapters/whisperx_adapter.go`
+
+**Fix**: Skip `cloneWhisperX()` if the directory already exists; `uvSync` still runs
+to set up the venv if needed.
+
+---
+
+## [deployed] Preserve original filenames on upload
 
 **Problem**: Scriberr renames every uploaded file to a UUID on disk
 (`8bfddc16-9021-40bc-b14d-6017c4589783.webm`). The original filename is stored only in
