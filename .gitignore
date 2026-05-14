@@ -43,6 +43,7 @@ whisperx-env
 env-data
 /main
 /server
+/startup_log.txt
 results.json
 !cmd/server/main.go
 test_word_conversion.go
