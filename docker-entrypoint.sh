@@ -53,10 +53,15 @@ if [ "$(id -u)" = "0" ]; then
     chown -R "$PUID:$PGID" /app/data /app/whisperx-env
 
     echo "=== Setup Complete ==="
-    echo "Switching to user appuser (UID=$PUID, GID=$PGID) and starting application..."
 
-    # Switch to the appuser and execute the command
-    exec gosu appuser "$@"
+    # PUID=0 means run as root — needed for NFS mounts with root_squash disabled
+    if [ "$PUID" = "0" ]; then
+        echo "Running as root (PUID=0)..."
+        exec "$@"
+    else
+        echo "Switching to user appuser (UID=$PUID, GID=$PGID) and starting application..."
+        exec gosu appuser "$@"
+    fi
 else
     echo "Running as non-root user UID=$(id -u), GID=$(id -g)"
 
