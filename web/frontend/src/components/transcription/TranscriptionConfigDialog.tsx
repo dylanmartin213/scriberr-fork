@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Check, XCircle } from "lucide-react";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import {
-    FormField, Section, InfoBanner, SelectField, SwitchField, SliderField, AdvancedAccordion,
+    FormField, Section, InfoBanner, SelectField,
     inputClassName,
 } from "@/components/transcription/FormHelpers";
 
@@ -89,8 +89,8 @@ interface TranscriptionConfigDialogProps {
 }
 
 const DEFAULT_PARAMS: WhisperXParams = {
-    model_family: "whisper",
-    model: "small",
+    model_family: "openai",
+    model: "whisper-1",
     model_cache_only: false,
     device: "cpu",
     device_index: 0,
@@ -130,11 +130,6 @@ const DEFAULT_PARAMS: WhisperXParams = {
     is_multi_track_enabled: false,
     api_key: "",
 };
-
-const WHISPER_MODELS = [
-    "tiny", "tiny.en", "base", "base.en", "small", "small.en",
-    "medium", "medium.en", "large", "large-v1", "large-v2", "large-v3"
-];
 
 const LANGUAGES = [
     { value: "auto", label: "Auto-detect" },
@@ -197,30 +192,6 @@ const LANGUAGES = [
     { value: "cy", label: "Welsh" },
 ];
 
-const CANARY_LANGUAGES = [
-    { value: "en", label: "English" },
-    { value: "de", label: "German" },
-    { value: "es", label: "Spanish" },
-    { value: "fr", label: "French" },
-];
-
-const PARAM_DESCRIPTIONS = {
-    model: "Size of the Whisper model. Larger = more accurate but slower.",
-    language: "Source language. Auto-detect works for most cases.",
-    task: "Transcribe in original language or translate to English.",
-    device: "CPU (universal), GPU (faster, CUDA required), or AUTO.",
-    compute_type: "Float16 (faster), Float32 (accurate), Int8 (fastest).",
-    batch_size: "Segments processed at once. Higher = faster but more memory.",
-    diarize: "Identify and separate different speakers.",
-    diarize_model: "Pyannote (accurate, needs HF token) or NVIDIA Sortformer (up to 4 speakers).",
-    temperature: "0 = deterministic, higher = more creative.",
-    beam_size: "Search beams. Higher = better quality but slower.",
-    vad_method: "Voice detection: Pyannote (accurate) or Silero (fast).",
-    initial_prompt: "Context text to guide transcription style.",
-    hf_token: "Required for Pyannote diarization models.",
-    vad_onset: "Voice detection sensitivity. Lower values (0.3-0.4) catch quieter/distant speakers.",
-    vad_offset: "Speech ending sensitivity. Lower values detect speech endings more precisely.",
-};
 
 // ============================================================================
 // Main Component
@@ -264,13 +235,7 @@ export const TranscriptionConfigDialog = memo(function TranscriptionConfigDialog
     }, [open, initialParams, initialName, initialDescription, isMultiTrack]);
 
     const updateParam = <K extends keyof WhisperXParams>(key: K, value: WhisperXParams[K]) => {
-        setParams(prev => {
-            const newParams = { ...prev, [key]: value };
-            if (key === 'model_family' && value === 'whisper') {
-                newParams.diarize_model = 'pyannote';
-            }
-            return newParams;
-        });
+        setParams(prev => ({ ...prev, [key]: value }));
     };
 
     const validateAPIKey = async () => {
@@ -360,21 +325,6 @@ export const TranscriptionConfigDialog = memo(function TranscriptionConfigDialog
                         </div>
                     )}
 
-                    {/* Model Family Selection */}
-                    <SelectField
-                        label="Model Family"
-                        description="Choose the AI model for transcription. Each has different capabilities and requirements."
-                        value={params.model_family}
-                        onValueChange={(v) => updateParam('model_family', v)}
-                        options={[
-                            { value: "whisper", label: "Whisper" },
-                            { value: "nvidia_parakeet", label: "NVIDIA Parakeet" },
-                            { value: "nvidia_canary", label: "NVIDIA Canary" },
-                            { value: "mistral_voxtral", label: "Mistral Voxtral" },
-                            { value: "openai", label: "OpenAI" },
-                        ]}
-                    />
-
                     {/* Multi-track notice */}
                     {isMultiTrack && (
                         <InfoBanner variant="info" title="Multi-track Audio Detected">
@@ -382,27 +332,13 @@ export const TranscriptionConfigDialog = memo(function TranscriptionConfigDialog
                         </InfoBanner>
                     )}
 
-                    {/* Model-Specific Configuration */}
-                    {params.model_family === "whisper" && (
-                        <WhisperConfig params={params} updateParam={updateParam} isMultiTrack={isMultiTrack} />
-                    )}
-                    {params.model_family === "nvidia_parakeet" && (
-                        <ParakeetConfig params={params} updateParam={updateParam} isMultiTrack={isMultiTrack} />
-                    )}
-                    {params.model_family === "nvidia_canary" && (
-                        <CanaryConfig params={params} updateParam={updateParam} isMultiTrack={isMultiTrack} />
-                    )}
-                    {params.model_family === "openai" && (
-                        <OpenAIConfig
-                            params={params} updateParam={updateParam}
-                            isValidating={isValidating} validationStatus={validationStatus}
-                            validationMessage={validationMessage} availableModels={availableModels}
-                            onValidate={validateAPIKey}
-                        />
-                    )}
-                    {params.model_family === "mistral_voxtral" && (
-                        <VoxtralConfig params={params} updateParam={updateParam} />
-                    )}
+                    {/* OpenAI Configuration */}
+                    <OpenAIConfig
+                        params={params} updateParam={updateParam}
+                        isValidating={isValidating} validationStatus={validationStatus}
+                        validationMessage={validationMessage} availableModels={availableModels}
+                        onValidate={validateAPIKey}
+                    />
                 </div>
 
                 {/* Footer */}
@@ -435,93 +371,6 @@ export const TranscriptionConfigDialog = memo(function TranscriptionConfigDialog
 });
 
 // ============================================================================
-// Shared Diarization Section
-// ============================================================================
-
-function DiarizationSection({ id, params, updateParam, description }: {
-    id: string;
-    params: WhisperXParams;
-    updateParam: <K extends keyof WhisperXParams>(key: K, value: WhisperXParams[K]) => void;
-    description?: string;
-}) {
-    return (
-        <Section title="Speaker Diarization" description={description}>
-            <div className="space-y-4">
-                <SwitchField id={id} label="Enable speaker identification" checked={params.diarize} onCheckedChange={(v) => updateParam('diarize', v)} />
-
-                {params.diarize && (
-                    <div className="p-4 bg-[var(--bg-main)] rounded-xl border border-[var(--border-subtle)] space-y-4">
-                        <SelectField
-                            label="Diarization Model"
-                            value={params.diarize_model}
-                            onValueChange={(v) => updateParam('diarize_model', v)}
-                            options={[
-                                { value: "pyannote", label: "Pyannote" },
-                                { value: "nvidia_sortformer", label: "NVIDIA Sortformer" },
-                            ]}
-                        />
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <FormField label="Min Speakers" optional>
-                                <Input
-                                    type="number" min={1} max={20} placeholder="Auto"
-                                    value={params.min_speakers || ""}
-                                    onChange={(e) => updateParam('min_speakers', e.target.value ? parseInt(e.target.value) : undefined)}
-                                    className={inputClassName}
-                                />
-                            </FormField>
-                            <FormField label="Max Speakers" optional>
-                                <Input
-                                    type="number" min={1} max={20} placeholder="Auto"
-                                    value={params.max_speakers || ""}
-                                    onChange={(e) => updateParam('max_speakers', e.target.value ? parseInt(e.target.value) : undefined)}
-                                    className={inputClassName}
-                                />
-                            </FormField>
-                        </div>
-
-                        {params.diarize_model === "pyannote" && (
-                            <>
-                                <FormField label="Hugging Face Token" description={PARAM_DESCRIPTIONS.hf_token}>
-                                    <Input
-                                        type="password" placeholder="hf_..."
-                                        value={params.hf_token || ""}
-                                        onChange={(e) => updateParam('hf_token', e.target.value || undefined)}
-                                        className={inputClassName}
-                                    />
-                                </FormField>
-
-                                <div className="pt-3 border-t border-[var(--border-subtle)]">
-                                    <p className="text-xs text-[var(--text-tertiary)] mb-3">Voice Detection Tuning (for noisy/distant audio)</p>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <FormField label="VAD Onset" description={PARAM_DESCRIPTIONS.vad_onset}>
-                                            <Input
-                                                type="number" min={0.1} max={0.9} step={0.05}
-                                                value={params.vad_onset}
-                                                onChange={(e) => updateParam('vad_onset', parseFloat(e.target.value) || 0.5)}
-                                                className={inputClassName}
-                                            />
-                                        </FormField>
-                                        <FormField label="VAD Offset" description={PARAM_DESCRIPTIONS.vad_offset}>
-                                            <Input
-                                                type="number" min={0.1} max={0.9} step={0.05}
-                                                value={params.vad_offset}
-                                                onChange={(e) => updateParam('vad_offset', parseFloat(e.target.value) || 0.363)}
-                                                className={inputClassName}
-                                            />
-                                        </FormField>
-                                    </div>
-                                </div>
-                            </>
-                        )}
-                    </div>
-                )}
-            </div>
-        </Section>
-    );
-}
-
-// ============================================================================
 // Model-Specific Configuration Components
 // ============================================================================
 
@@ -529,98 +378,6 @@ interface ConfigProps {
     params: WhisperXParams;
     updateParam: <K extends keyof WhisperXParams>(key: K, value: WhisperXParams[K]) => void;
     isMultiTrack?: boolean;
-}
-
-function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
-    return (
-        <div className="space-y-6">
-            <Section title="Model Settings">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <SelectField label="Model Size" description={PARAM_DESCRIPTIONS.model} value={params.model} onValueChange={(v) => updateParam('model', v)} options={WHISPER_MODELS} />
-                    <SelectField label="Language" description={PARAM_DESCRIPTIONS.language} value={params.language || "auto"} onValueChange={(v) => updateParam('language', v === "auto" ? undefined : v)} options={LANGUAGES} />
-                    <SelectField label="Task" description={PARAM_DESCRIPTIONS.task} value={params.task} onValueChange={(v) => updateParam('task', v)} options={[{ value: "transcribe", label: "Transcribe" }, { value: "translate", label: "Translate to English" }]} />
-                    <SelectField label="Device" description={PARAM_DESCRIPTIONS.device} value={params.device} onValueChange={(v) => updateParam('device', v)} options={[{ value: "cpu", label: "CPU" }, { value: "cuda", label: "GPU (CUDA)" }]} />
-                </div>
-            </Section>
-
-            {!isMultiTrack && (
-                <DiarizationSection id="diarize" params={params} updateParam={updateParam} description="Identify and separate different speakers in the audio" />
-            )}
-
-            <AdvancedAccordion>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <SelectField label="Compute Type" description={PARAM_DESCRIPTIONS.compute_type} value={params.compute_type} onValueChange={(v) => updateParam('compute_type', v)} options={[{ value: "float32", label: "Float32 (Accurate)" }, { value: "float16", label: "Float16 (Fast)" }, { value: "int8", label: "Int8 (Fastest)" }]} />
-                    <FormField label="Batch Size" description={PARAM_DESCRIPTIONS.batch_size}>
-                        <Input type="number" min={1} max={64} value={params.batch_size} onChange={(e) => updateParam('batch_size', parseInt(e.target.value) || 8)} className={inputClassName} />
-                    </FormField>
-                    <FormField label="Beam Size" description={PARAM_DESCRIPTIONS.beam_size}>
-                        <Input type="number" min={1} max={10} value={params.beam_size} onChange={(e) => updateParam('beam_size', parseInt(e.target.value) || 5)} className={inputClassName} />
-                    </FormField>
-                    <FormField label="Temperature" description={PARAM_DESCRIPTIONS.temperature}>
-                        <Input type="number" min={0} max={1} step={0.1} value={params.temperature} onChange={(e) => updateParam('temperature', parseFloat(e.target.value) || 0)} className={inputClassName} />
-                    </FormField>
-                </div>
-
-                <FormField label="Initial Prompt" description={PARAM_DESCRIPTIONS.initial_prompt} optional>
-                    <Textarea
-                        placeholder="Optional context to guide transcription..."
-                        value={params.initial_prompt || ""}
-                        onChange={(e) => updateParam('initial_prompt', e.target.value || undefined)}
-                        className={`${inputClassName} resize-none min-h-[80px]`}
-                        rows={2}
-                    />
-                </FormField>
-
-                <SwitchField id="suppress_numerals" label="Suppress numerals (write numbers as words)" checked={params.suppress_numerals} onCheckedChange={(v) => updateParam('suppress_numerals', v)} />
-
-                <div className="pt-2 border-t border-[var(--border-subtle)] space-y-4">
-                    <SwitchField id="no_align" label="Skip word alignment (faster, less precise timestamps)" checked={params.no_align} onCheckedChange={(v) => updateParam('no_align', v)} />
-
-                    {!params.no_align && (
-                        <FormField label="Custom Alignment Model" description="WhisperX-compatible alignment model (e.g., KBLab/wav2vec2-large-voxrex-swedish). Leave empty for default." optional>
-                            <Input
-                                placeholder="model/path or HuggingFace ID"
-                                value={params.align_model || ""}
-                                onChange={(e) => updateParam('align_model', e.target.value || undefined)}
-                                className={inputClassName}
-                            />
-                        </FormField>
-                    )}
-                </div>
-            </AdvancedAccordion>
-        </div>
-    );
-}
-
-function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
-    return (
-        <div className="space-y-6">
-            <Section title="Audio Context" description="Configure how much context the model uses for long audio files">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <SliderField label="Left Context" value={params.attention_context_left} onValueChange={(v) => updateParam('attention_context_left', v)} min={64} max={512} step={64} />
-                    <SliderField label="Right Context" value={params.attention_context_right} onValueChange={(v) => updateParam('attention_context_right', v)} min={64} max={512} step={64} />
-                </div>
-            </Section>
-
-            {!isMultiTrack && (
-                <DiarizationSection id="parakeet_diarize" params={params} updateParam={updateParam} />
-            )}
-        </div>
-    );
-}
-
-function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
-    return (
-        <div className="space-y-6">
-            <Section title="Language Settings">
-                <SelectField label="Source Language" value={params.language || "en"} onValueChange={(v) => updateParam('language', v)} options={CANARY_LANGUAGES} />
-            </Section>
-
-            {!isMultiTrack && (
-                <DiarizationSection id="canary_diarize" params={params} updateParam={updateParam} />
-            )}
-        </div>
-    );
 }
 
 interface OpenAIConfigProps extends ConfigProps {
@@ -676,27 +433,3 @@ function OpenAIConfig({
     );
 }
 
-function VoxtralConfig({ params, updateParam }: ConfigProps) {
-    return (
-        <div className="space-y-6">
-            <InfoBanner variant="warning" title="Limited Features">
-                Voxtral does not support word-level timestamps. Synchronized playback, audio seeking, and timestamp-based features won't be available.
-            </InfoBanner>
-
-            <Section title="Language Settings">
-                <SelectField label="Language" description="Source language for transcription" value={params.language || "en"} onValueChange={(v) => updateParam('language', v)} options={LANGUAGES} />
-            </Section>
-
-            <AdvancedAccordion>
-                <FormField label="Max Tokens" description="Maximum number of tokens to generate. Voxtral has a 32k context window and handles up to 30-40 minutes of audio.">
-                    <Input
-                        type="number" min={1024} max={16384}
-                        value={params.max_new_tokens || 8192}
-                        onChange={(e) => updateParam('max_new_tokens', parseInt(e.target.value) || 8192)}
-                        className={inputClassName}
-                    />
-                </FormField>
-            </AdvancedAccordion>
-        </div>
-    );
-}

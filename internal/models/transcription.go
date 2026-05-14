@@ -57,11 +57,11 @@ const (
 
 // WhisperXParams contains parameters for WhisperX transcription
 type WhisperXParams struct {
-	// Model family (whisper or nvidia)
-	ModelFamily string `json:"model_family" gorm:"type:varchar(20);default:'whisper'"`
+	// Model family
+	ModelFamily string `json:"model_family" gorm:"type:varchar(20);default:'openai'"`
 
 	// Model parameters
-	Model          string  `json:"model" gorm:"type:varchar(50);default:'small'"`
+	Model          string  `json:"model" gorm:"type:varchar(50);default:'whisper-1'"`
 	ModelCacheOnly bool    `json:"model_cache_only" gorm:"type:boolean;default:false"`
 	ModelDir       *string `json:"model_dir,omitempty" gorm:"type:text"`
 

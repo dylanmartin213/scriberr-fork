@@ -14,7 +14,7 @@ the Portainer stack to use it.
 
 ---
 
-## Current Scriberr Setup
+## Current Scriberr Setup (patched fork, as of 2026-05-14)
 
 ### What Scriberr Is
 
@@ -24,48 +24,53 @@ It uses WhisperX, PyAnnote, and NVIDIA NeMo models for transcription and speaker
 ### Where It Runs
 
 - **Server**: ellington (192.168.2.152), Ubuntu 24.04
-- **Managed via**: Portainer
-- **Compose file**: `docker/ellington/scriberr/docker-compose.yml` in this repo
+- **Image**: `scriberr-fork:latest` (built locally on ellington from this repo)
 - **External URL**: https://recorder.dylanamadeus.com (via Cloudflare Tunnel → cloudflared container on tunnelnet)
 - **Internal URL**: http://192.168.2.152:8080
 
-### Current docker-compose.yml
+### Working docker run command
 
-```yaml
-services:
-  scriberr:
-    image: ghcr.io/rishikanthc/scriberr:latest
-    container_name: scriberr
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    entrypoint: ["/bin/sh", "-c", "mkdir -p /app/data/uploads /app/data/transcripts && exec /app/scriberr"]
-    volumes:
-      - /opt/docker/scriberr/data:/app/data
-      - /nas/media/Scriberr/Models:/app/whisperx-env
-      - /nas/media/Scriberr/Recordings:/app/uploads
-    environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-      - APP_ENV=production
-      - UPLOAD_DIR=/app/uploads
-      - JWT_SECRET=${JWT_SECRET}
-      - SECURE_COOKIES=false
-    networks:
-      - tunnelnet
-
-networks:
-  tunnelnet:
-    external: true
+```bash
+docker run -d --name scriberr \
+  -p 8080:8080 \
+  --network tunnelnet \
+  --entrypoint /bin/sh \
+  -v /nas/media/Scriberr/Recordings:/app/uploads \
+  -v /nas/media/Scriberr/Models:/app/whisperx-env \
+  -v scriberr_data:/app/data \
+  -e DATABASE_PATH=/app/data/scriberr.db \
+  -e UPLOAD_DIR=/app/uploads \
+  scriberr-fork:latest \
+  -c 'mkdir -p /app/data/transcripts /app/data/temp && exec /app/scriberr'
 ```
+
+**Critical**: no `--user` flag. Container runs as root (process UID=0). Required because
+Synology NFS ACLs block writes from non-root UIDs even on 777-permissioned directories.
+Running as root lets the Go server write audio files to `/app/uploads` (NAS).
+
+### Volume Layout
+
+| Container path       | Host path                        | Type                | Purpose                        |
+|----------------------|----------------------------------|---------------------|--------------------------------|
+| `/app/data`          | `scriberr_data` Docker volume    | named volume        | SQLite DB, transcripts, temp   |
+| `/app/whisperx-env`  | `/nas/media/Scriberr/Models`     | NFS bind mount      | ML model cache (~30-40 GB)     |
+| `/app/uploads`       | `/nas/media/Scriberr/Recordings` | NFS bind mount      | Uploaded/recorded audio files  |
+
+**Important**: mount models at `/app/whisperx-env` (not `/data/models`). That's the path
+the Go server passes to all model adapters. Wrong path → full re-download on each container.
 
 ### Why the entrypoint is overridden
 
-The stock `docker-entrypoint.sh` tries to `chown` the `/app/whisperx-env` mount point, which
-fails with "Operation not permitted" because it's an NFS mount with root squash. The custom
-entrypoint bypasses that entirely and just creates the data subdirectories, then runs the
-binary directly as root. Root can write to the NFS share; non-root containers cannot (Synology
-ACLs override POSIX 777 permissions for non-root container processes, but allow root).
+The stock `docker-entrypoint.sh` tries to `chown /app/whisperx-env` (the NFS models mount),
+which fails with "Operation not permitted" (NFS root squash). The custom one-liner entrypoint
+bypasses that entirely and runs the binary directly as root.
+
+### Why root is required
+
+Synology ACLs override POSIX 777 permissions for non-root UID processes accessing NFS.
+Even `rwxrwxrwx 1026 users` directories block writes from UID 1000. Root (UID=0) is also
+squashed to `nobody` on NFS by default, but Synology's own ACL layer still allows it.
+Bottom line: only root can write recordings to the NAS from the Docker container.
 
 ### Volume Layout
 

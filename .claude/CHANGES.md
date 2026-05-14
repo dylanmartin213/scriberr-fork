@@ -19,6 +19,10 @@ The patches in this file document what to watch for when merging:
 - `internal/service/file_service.go` — SaveUpload filename logic
 - `internal/dropzone/dropzone.go` — uploadFile filename logic
 - `internal/transcription/adapters/whisperx_adapter.go` — WhisperX clone guard
+- `cmd/server/main.go` — registerAdapters: only openai_whisper registered (no local adapters)
+- `Dockerfile` — runtime is debian:bookworm-slim, no Python/uv/ML build deps
+- `internal/transcription/unified_service.go` — default model is openai_whisper; diarization failure is non-fatal
+- `web/frontend/src/components/transcription/TranscriptionConfigDialog.tsx` — OpenAI-only UI, no local model options
 
 ---
 
@@ -32,6 +36,33 @@ previous run. Git exited 128 and WhisperX failed to initialize.
 
 **Fix**: Skip `cloneWhisperX()` if the directory already exists; `uvSync` still runs
 to set up the venv if needed.
+
+---
+
+## [pending deploy] External-only transcription mode (OpenAI only)
+
+**Problem**: Upstream registers 7 adapters (whisperx, parakeet, canary, voxtral, openai_whisper,
+pyannote, sortformer). Local adapters require a Python runtime, model downloads (~GB), and
+GPU/CPU resources not suitable for the homelab NAS.
+
+**Files changed**:
+- `cmd/server/main.go` — `registerAdapters()` now registers only `openai_whisper`; removed
+  all local adapter registrations + associated env path variables; removed unused `path/filepath` import
+- `Dockerfile` — runtime stage changed from `python:3.11-slim` to `debian:bookworm-slim`;
+  removed Python, uv, build-essential, gcc, g++, make, python3-dev, git; kept ffmpeg, ca-certs,
+  curl, gosu, unzip, yt-dlp, deno; removed `PYTHONUNBUFFERED` and `WHISPERX_ENV` env vars
+- `internal/transcription/unified_service.go` — `selectModels()` default fallback changed
+  from `ModelWhisperX` to `ModelOpenAI`; diarization adapter failure changed from fatal error
+  to warning log + skip (graceful degradation when no diarization adapter registered)
+- `internal/models/transcription.go` — `ModelFamily` GORM default changed from `'whisper'`
+  to `'openai'`; `Model` default changed from `'small'` to `'whisper-1'`
+- `web/frontend/src/components/transcription/TranscriptionConfigDialog.tsx` — default params
+  updated; model family selector removed (only OpenAI shown directly); removed `WhisperConfig`,
+  `ParakeetConfig`, `CanaryConfig`, `VoxtralConfig`, `DiarizationSection` components and
+  their associated constants (`WHISPER_MODELS`, `CANARY_LANGUAGES`, `PARAM_DESCRIPTIONS`)
+
+**Note**: If user enables diarization in the UI and submits, the backend will log a warning
+and skip diarization rather than failing the job. Diarization is unavailable in external-only mode.
 
 ---
 

@@ -313,18 +313,19 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 			logger.Info("Running separate diarization", "model_id", diarizationModelID)
 			diarizationAdapter, err := u.registry.GetDiarizationAdapter(diarizationModelID)
 			if err != nil {
-				return fmt.Errorf("failed to get diarization adapter: %w", err)
-			}
+				// Diarization adapter not available (e.g. external-only mode); skip gracefully
+				logger.Warn("Diarization adapter not registered, skipping diarization", "model_id", diarizationModelID, "error", err)
+			} else {
+				// Use the same preprocessed audio for diarization
+				diarizationResult, err = diarizationAdapter.Diarize(ctx, preprocessedInput, diarizationParams, procCtx)
+				if err != nil {
+					return fmt.Errorf("diarization failed: %w", err)
+				}
 
-			// Use the same preprocessed audio for diarization
-			diarizationResult, err = diarizationAdapter.Diarize(ctx, preprocessedInput, diarizationParams, procCtx)
-			if err != nil {
-				return fmt.Errorf("diarization failed: %w", err)
-			}
-
-			// Merge diarization results with transcription
-			if transcriptResult != nil && diarizationResult != nil {
-				transcriptResult = u.mergeDiarizationWithTranscription(transcriptResult, diarizationResult)
+				// Merge diarization results with transcription
+				if transcriptResult != nil && diarizationResult != nil {
+					transcriptResult = u.mergeDiarizationWithTranscription(transcriptResult, diarizationResult)
+				}
 			}
 		}
 	}
@@ -388,7 +389,7 @@ func (u *UnifiedTranscriptionService) selectModels(params models.WhisperXParams)
 	case FamilyMistralVoxtral:
 		transcriptionModelID = ModelVoxtral
 	default:
-		transcriptionModelID = ModelWhisperX // Default fallback
+		transcriptionModelID = ModelOpenAI // Default fallback
 	}
 
 	// Determine diarization model if needed

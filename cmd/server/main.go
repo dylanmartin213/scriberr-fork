@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -217,36 +216,12 @@ func main() {
 	logger.Info("Server stopped")
 }
 
-// registerAdapters registers all transcription and diarization adapters with config-based paths
+// registerAdapters registers transcription adapters. Only the OpenAI cloud adapter
+// is registered; local Python-based adapters (WhisperX, Parakeet, Canary, Voxtral)
+// are excluded to avoid downloading large models and requiring a Python runtime.
 func registerAdapters(cfg *config.Config) {
-	logger.Info("Registering adapters with environment path", "whisperx_env", cfg.WhisperXEnv)
-
-	// Shared environment path for NVIDIA models (NeMo-based)
-	nvidiaEnvPath := filepath.Join(cfg.WhisperXEnv, "parakeet")
-
-	// Dedicated environment path for PyAnnote (to avoid dependency conflicts)
-	pyannoteEnvPath := filepath.Join(cfg.WhisperXEnv, "pyannote")
-
-	// Dedicated environment path for Voxtral (Mistral AI model)
-	voxtralEnvPath := filepath.Join(cfg.WhisperXEnv, "voxtral")
-
-	// Register transcription adapters
-	registry.RegisterTranscriptionAdapter("whisperx",
-		adapters.NewWhisperXAdapter(cfg.WhisperXEnv))
-	registry.RegisterTranscriptionAdapter("parakeet",
-		adapters.NewParakeetAdapter(nvidiaEnvPath))
-	registry.RegisterTranscriptionAdapter("canary",
-		adapters.NewCanaryAdapter(nvidiaEnvPath)) // Shares with Parakeet
-	registry.RegisterTranscriptionAdapter("voxtral",
-		adapters.NewVoxtralAdapter(voxtralEnvPath))
 	registry.RegisterTranscriptionAdapter("openai_whisper",
 		adapters.NewOpenAIAdapter(cfg.OpenAIAPIKey))
 
-	// Register diarization adapters
-	registry.RegisterDiarizationAdapter("pyannote",
-		adapters.NewPyAnnoteAdapter(pyannoteEnvPath)) // Dedicated environment
-	registry.RegisterDiarizationAdapter("sortformer",
-		adapters.NewSortformerAdapter(nvidiaEnvPath)) // Shares with Parakeet
-
-	logger.Info("Adapter registration complete")
+	logger.Info("Adapter registration complete", "adapter", "openai_whisper")
 }
