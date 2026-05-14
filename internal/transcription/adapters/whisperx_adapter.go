@@ -309,9 +309,12 @@ func (w *WhisperXAdapter) PrepareEnvironment(ctx context.Context) error {
 		return fmt.Errorf("failed to create environment directory: %w", err)
 	}
 
-	// Clone WhisperX
-	if err := w.cloneWhisperX(); err != nil {
-		return fmt.Errorf("failed to clone WhisperX: %w", err)
+	// Clone WhisperX only if the directory doesn't already exist.
+	// On NFS-backed envPaths the directory persists across container restarts.
+	if _, err := os.Stat(whisperxPath); os.IsNotExist(err) {
+		if err := w.cloneWhisperX(); err != nil {
+			return fmt.Errorf("failed to clone WhisperX: %w", err)
+		}
 	}
 
 	// Update dependencies
