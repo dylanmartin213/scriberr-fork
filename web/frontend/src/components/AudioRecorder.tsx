@@ -10,6 +10,7 @@ import {
 	Loader2,
 	ChevronDown,
 	Settings,
+	X as XIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,11 +27,12 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useTags } from "@/features/transcription/hooks/useAudioFiles";
 
 interface AudioRecorderProps {
 	isOpen: boolean;
 	onClose: () => void;
-	onRecordingComplete: (blob: Blob, title: string) => void;
+	onRecordingComplete: (blob: Blob, title: string, tagIds: number[]) => void;
 }
 
 export function AudioRecorder({
@@ -50,6 +52,9 @@ export function AudioRecorder({
 	const [selectedDevice, setSelectedDevice] = useState("");
 	const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
 	const [isUploading, setIsUploading] = useState(false);
+	const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+
+	const { data: availableTags = [] } = useTags();
 
 	const micContainerRef = useRef<HTMLDivElement>(null);
 
@@ -243,6 +248,7 @@ export function AudioRecorder({
 			await onRecordingComplete(
 				recordedBlob,
 				title || `Recording ${new Date().toISOString()}`,
+				selectedTagIds,
 			);
 			// Reset state
 			setRecordedBlob(null);
@@ -267,6 +273,7 @@ export function AudioRecorder({
 		setRecordingTime(0);
 		setIsRecording(false);
 		setIsPaused(false);
+		setSelectedTagIds([]);
 		onClose();
 	};
 
@@ -297,6 +304,42 @@ export function AudioRecorder({
 							disabled={isRecording}
 						/>
 					</div>
+
+					{/* Tag Selection */}
+					{availableTags.length > 0 && (
+						<div className="space-y-2">
+							<label className="text-sm font-medium text-carbon-700 dark:text-carbon-300">
+								Tags (Optional)
+							</label>
+							<div className="flex flex-wrap gap-2">
+								{availableTags.map(tag => {
+									const selected = selectedTagIds.includes(tag.id);
+									return (
+										<button
+											key={tag.id}
+											type="button"
+											onClick={() => setSelectedTagIds(prev =>
+												selected ? prev.filter(id => id !== tag.id) : [...prev, tag.id]
+											)}
+											className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all"
+											style={selected ? {
+												backgroundColor: tag.color,
+												color: "#fff",
+												border: `1px solid ${tag.color}`,
+											} : {
+												backgroundColor: tag.color + "22",
+												color: tag.color,
+												border: `1px solid ${tag.color}66`,
+											}}
+										>
+											{tag.name}
+											{selected && <XIcon className="h-3 w-3" />}
+										</button>
+									);
+								})}
+							</div>
+						</div>
+					)}
 
 					{/* Microphone Selection */}
 					{availableDevices.length > 1 && (

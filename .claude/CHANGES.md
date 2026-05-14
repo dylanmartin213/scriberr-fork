@@ -35,6 +35,35 @@ to set up the venv if needed.
 
 ---
 
+## [pending deploy] Tag filter fix, z-index fix, tags in Record Audio dialog
+
+### Tag filter subquery fix
+`internal/repository/implementations.go` (`ListWithParams`): replaced the manual
+`JOIN job_tags JOIN tags` with a `WHERE id IN (subquery)` approach. The old JOIN
+could produce ambiguous `ORDER BY created_at` in SQLite and conflicted with `Preload("Tags")`.
+The subquery approach is unambiguous and definitely correct.
+
+### Tag popover z-index fix
+`web/frontend/src/features/transcription/components/AudioDetailView.tsx`: added `relative z-[1]`
+to the title card div. The title card and audio player are siblings inside a sticky `z-10` container.
+Both create stacking contexts via `backdrop-blur-lg`. The audio player (later in DOM) was painting
+on top of the title card's popover. `z-[1]` on the title card raises its stacking context above the
+audio player's stacking context (which has no explicit z-index = auto = 0).
+
+### Tags in Record Audio dialog
+`web/frontend/src/components/AudioRecorder.tsx`: added tag multi-select UI (pills) before
+the mic selector. Selected tags are passed to `onRecordingComplete`.
+
+`web/frontend/src/components/Header.tsx`: forwarded `tagIds: number[]` from AudioRecorder
+to `effectiveRecordingComplete`.
+
+`web/frontend/src/contexts/GlobalUploadContext.tsx`: `handleRecordingComplete` now accepts
+optional `tagIds?: number[]`. When tags are provided, the recording is uploaded directly
+(bypassing `handleFileSelect`'s progress UI) to get back the job ID, then tags are applied
+via POST to `/api/v1/transcription/{id}/tags`.
+
+---
+
 ## [pending deploy] Tags, YYMMDD filenames, PWA black bar, rename-syncs-file
 
 ### PWA theme color

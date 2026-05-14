@@ -129,9 +129,8 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 		}
 	};
 
-	const handleRecordingComplete = async (blob: Blob, title: string) => {
-		// Use global recording complete handler
-		await effectiveRecordingComplete(blob, title);
+	const handleRecordingComplete = async (blob: Blob, title: string, tagIds: number[]) => {
+		await effectiveRecordingComplete(blob, title, tagIds);
 	};
 
 
@@ -324,7 +323,7 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 			<SystemAudioRecorder
 				isOpen={isSystemRecorderOpen}
 				onClose={() => setIsSystemRecorderOpen(false)}
-				onRecordingComplete={effectiveRecordingComplete}
+				onRecordingComplete={(blob, title) => effectiveRecordingComplete(blob, title)}
 			/>
 
 			{/* Quick Transcription Dialog */}

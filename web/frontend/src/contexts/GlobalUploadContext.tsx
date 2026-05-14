@@ -9,6 +9,7 @@ import { useLocation } from "react-router-dom";
 import { useAudioUpload, useMultiTrackUpload } from "@/features/transcription/hooks/useAudioFiles";
 import { useToast } from "@/components/ui/toast";
 import { MultiTrackUploadDialog } from "@/features/transcription/components/MultiTrackUploadDialog";
+import { useAuth } from "@/features/auth/hooks/useAuth";
 
 // Types
 interface FileWithType {
@@ -35,7 +36,7 @@ interface GlobalUploadContextValue {
     ) => Promise<void>;
     openMultiTrackDialog: () => void;
     // Recording completion
-    handleRecordingComplete: (blob: Blob, title: string) => Promise<void>;
+    handleRecordingComplete: (blob: Blob, title: string, tagIds?: number[]) => Promise<void>;
     // State
     isUploading: boolean;
     uploadProgress: UploadProgress[];
@@ -50,6 +51,7 @@ const GlobalUploadContext = createContext<GlobalUploadContextValue | null>(
 export function GlobalUploadProvider({ children }: PropsWithChildren) {
     const { mutateAsync: uploadFile } = useAudioUpload();
     const { mutateAsync: uploadMultiTrack } = useMultiTrackUpload();
+    const { getAuthHeaders } = useAuth();
     const { toast } = useToast();
     const location = useLocation();
 
@@ -227,11 +229,29 @@ export function GlobalUploadProvider({ children }: PropsWithChildren) {
     }, []);
 
     const handleRecordingComplete = useCallback(
-        async (blob: Blob, title: string) => {
+        async (blob: Blob, title: string, tagIds?: number[]) => {
             const file = new File([blob], `${title}.webm`, { type: blob.type });
-            await handleFileSelect(file);
+            if (!tagIds || tagIds.length === 0) {
+                await handleFileSelect(file);
+                return;
+            }
+            // Upload directly to get job ID so we can apply tags
+            const job = await uploadFile({ file, isVideo: false });
+            if (job?.id && tagIds.length > 0) {
+                for (const tagId of tagIds) {
+                    try {
+                        await fetch(`/api/v1/transcription/${job.id}/tags`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                            body: JSON.stringify({ tag_id: tagId }),
+                        });
+                    } catch {
+                        // non-fatal — tags can be added manually later
+                    }
+                }
+            }
         },
-        [handleFileSelect]
+        [handleFileSelect, uploadFile, getAuthHeaders]
     );
 
     const handleMultiTrackDialogClose = useCallback(() => {

@@ -107,11 +107,13 @@ func (r *jobRepository) ListWithParams(ctx context.Context, offset, limit int, s
 		db = db.Where("title LIKE ? OR audio_path LIKE ?", search, search)
 	}
 
-	// Apply tag filter via join
+	// Apply tag filter via subquery (avoids JOIN ambiguity with Preload and ORDER BY)
 	if tagFilter != "" {
-		db = db.Joins("JOIN job_tags ON job_tags.transcription_job_id = transcription_jobs.id").
+		sub := r.db.Table("job_tags").
+			Select("job_tags.transcription_job_id").
 			Joins("JOIN tags ON tags.id = job_tags.tag_id").
 			Where("tags.name = ?", tagFilter)
+		db = db.Where("transcription_jobs.id IN (?)", sub)
 	}
 
 	// Count total matching records
