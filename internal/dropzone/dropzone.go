@@ -15,7 +15,6 @@ import (
 	"scriberr/internal/repository"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/google/uuid"
 )
 
 // TaskQueue interface for enqueueing transcription jobs
@@ -240,11 +239,24 @@ func (s *Service) uploadFile(sourcePath, originalFilename string) error {
 		return fmt.Errorf("failed to create upload directory: %v", err)
 	}
 
-	// Generate unique filename
-	jobID := uuid.New().String()
-	ext := filepath.Ext(originalFilename)
-	filename := fmt.Sprintf("%s%s", jobID, ext)
+	// Preserve original filename, sanitizing unsafe characters.
+	sanitized := strings.ReplaceAll(filepath.Base(originalFilename), " ", "_")
+	ext := filepath.Ext(sanitized)
+	base := strings.TrimSuffix(sanitized, ext)
+
+	filename := sanitized
 	destPath := filepath.Join(uploadDir, filename)
+	for counter := 1; ; counter++ {
+		if _, err := os.Stat(destPath); os.IsNotExist(err) {
+			break
+		}
+		filename = fmt.Sprintf("%s-%d%s", base, counter, ext)
+		destPath = filepath.Join(uploadDir, filename)
+	}
+	jobID := base
+	if filename != sanitized {
+		jobID = strings.TrimSuffix(filename, ext)
+	}
 
 	// Copy file from dropzone to upload directory
 	if err := s.copyFile(sourcePath, destPath); err != nil {

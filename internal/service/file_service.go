@@ -6,8 +6,7 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
-
-	"github.com/google/uuid"
+	"strings"
 )
 
 // FileService handles file system operations
@@ -32,11 +31,21 @@ func (s *fileService) SaveUpload(fileHeader *multipart.FileHeader, destDir strin
 		return "", err
 	}
 
-	// Generate unique filename
-	id := uuid.New().String()
-	ext := filepath.Ext(fileHeader.Filename)
-	filename := fmt.Sprintf("%s%s", id, ext)
+	// Preserve original filename, sanitizing unsafe characters.
+	originalName := filepath.Base(fileHeader.Filename)
+	originalName = strings.ReplaceAll(originalName, " ", "_")
+	ext := filepath.Ext(originalName)
+	base := strings.TrimSuffix(originalName, ext)
+
+	filename := originalName
 	filePath := filepath.Join(destDir, filename)
+	for counter := 1; ; counter++ {
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			break
+		}
+		filename = fmt.Sprintf("%s-%d%s", base, counter, ext)
+		filePath = filepath.Join(destDir, filename)
+	}
 
 	// Open source file
 	src, err := fileHeader.Open()
