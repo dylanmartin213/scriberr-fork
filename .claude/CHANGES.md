@@ -35,6 +35,50 @@ to set up the venv if needed.
 
 ---
 
+## [pending deploy] Tags, YYMMDD filenames, PWA black bar, rename-syncs-file
+
+### PWA theme color
+`web/frontend/vite.config.ts`: `theme_color` and `background_color` changed from purple
+(`#8936FF`) / teal (`#2EC6FE`) to black (`#000000`). Fixes the purple Android PWA top bar.
+
+### YYMMDD date prefix on uploaded filenames
+`internal/service/file_service.go` (`SaveUpload`) and `internal/dropzone/dropzone.go`
+(`uploadFile`): new files are now stored as `260514_-_originalname.ext` on the NAS.
+The date prefix is `time.Now().Format("060102")`. Merge conflict area: same two functions.
+
+### Rename in UI renames the file on disk
+`internal/api/handlers.go` (`UpdateTranscriptionTitle`): after updating the `Title` field
+in DB, the handler also renames the audio file to `YYMMDD_-_{sanitizedTitle}.ext` using
+`job.CreatedAt` for the date prefix. `audio_path` is updated in DB too. Rename is
+best-effort (non-fatal if file is missing). Added `sanitizeFilenameForPath()` helper
+(identical rules to `sanitizeFilename` in file_service).
+
+### Tags feature
+Full many-to-many tag system. Watch these files on upstream merge:
+
+**Backend** (all new, low conflict risk):
+- `internal/models/transcription.go` — `Tag` struct + `Tags []Tag` on `TranscriptionJob`
+- `internal/database/database.go` — `&models.Tag{}` in AutoMigrate list
+- `internal/repository/implementations.go` — `TagRepository` interface + impl;
+  `ListWithParams` and `FindWithAssociations` now preload `Tags`; `ListWithParams`
+  signature has a new `tagFilter string` trailing param (update mocks in tests too)
+- `internal/api/handlers.go` — `tagRepo` field on `Handler`; `ListTags`, `CreateTag`,
+  `DeleteTag`, `GetJobTags`, `AddTagToJob`, `RemoveTagFromJob` handlers;
+  `ListTranscriptionJobs` reads `?tag=` query param
+- `internal/api/router.go` — `/api/v1/tags/` routes + `/:id/tags` sub-routes
+- `cmd/server/main.go` — `tagRepo` wired into `NewHandler`
+
+**Frontend** (all new):
+- `useAudioFiles.ts` — `Tag` type, `tags` on `AudioFile`, `useAudioListInfinite` passes
+  `tag` param; `useTags`, `useCreateTag`, `useDeleteTag`, `useAddTagToJob`,
+  `useRemoveTagFromJob` hooks
+- `useAudioDetail.ts` — `tags` field on `AudioFile` detail type; imports `Tag` from
+  `useAudioFiles`
+- `AudioFilesTable.tsx` — tag filter chips in toolbar; tag pills on each recording card
+- `AudioDetailView.tsx` — inline tag management (add/remove with popover + create new)
+
+---
+
 ## [deployed] Preserve original filenames on upload
 
 **Problem**: Scriberr renames every uploaded file to a UUID on disk

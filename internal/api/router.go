@@ -153,6 +153,11 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			transcription.GET("/:id/speakers", handler.GetSpeakerMappings)
 			transcription.POST("/:id/speakers", handler.UpdateSpeakerMappings)
 
+			// Tags for a transcription
+			transcription.GET("/:id/tags", handler.GetJobTags)
+			transcription.POST("/:id/tags", handler.AddTagToJob)
+			transcription.DELETE("/:id/tags/:tagId", handler.RemoveTagFromJob)
+
 			// Quick transcription endpoints
 			transcription.POST("/quick", handler.SubmitQuickTranscription)
 			transcription.GET("/quick/:id", handler.GetQuickTranscriptionStatus)
@@ -188,6 +193,15 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			{
 				queue.GET("/stats", handler.GetQueueStats)
 			}
+		}
+
+		// Tag routes (require authentication)
+		tags := v1.Group("/tags")
+		tags.Use(middleware.AuthMiddleware(authService))
+		{
+			tags.GET("/", handler.ListTags)
+			tags.POST("/", handler.CreateTag)
+			tags.DELETE("/:id", handler.DeleteTag)
 		}
 
 		// LLM configuration routes (require authentication)

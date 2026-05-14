@@ -1,6 +1,13 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 
+export interface Tag {
+    id: number;
+    name: string;
+    color: string;
+    created_at: string;
+}
+
 export interface AudioFile {
     id: string;
     title?: string;
@@ -14,6 +21,7 @@ export interface AudioFile {
     individual_transcripts?: any;
     speakers?: number;
     duration?: number;
+    tags?: Tag[];
 }
 
 export interface AudioFilesResponse {
@@ -32,6 +40,7 @@ interface AudioListParams {
     search?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    tag?: string;
 }
 
 export function useAudioList(params: AudioListParams) {
@@ -78,6 +87,7 @@ export function useAudioListInfinite(params: Omit<AudioListParams, 'page'>) {
             });
 
             if (params.search) searchParams.set('q', params.search);
+            if (params.tag) searchParams.set('tag', params.tag);
             if (params.sortBy) {
                 searchParams.set('sort_by', params.sortBy);
                 searchParams.set('sort_order', params.sortOrder || 'desc');
@@ -237,5 +247,96 @@ export function useQuickTranscription() {
             }
             return response.json();
         }
+    });
+}
+
+// --- Tag hooks ---
+
+export function useTags() {
+    const { getAuthHeaders } = useAuth();
+    return useQuery({
+        queryKey: ['tags'],
+        queryFn: async () => {
+            const response = await fetch('/api/v1/tags/', { headers: getAuthHeaders() });
+            if (!response.ok) throw new Error('Failed to fetch tags');
+            return response.json() as Promise<Tag[]>;
+        },
+    });
+}
+
+export function useCreateTag() {
+    const { getAuthHeaders } = useAuth();
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ name, color }: { name: string; color?: string }) => {
+            const response = await fetch('/api/v1/tags/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                body: JSON.stringify({ name, color }),
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to create tag');
+            }
+            return response.json() as Promise<Tag>;
+        },
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tags'] }),
+    });
+}
+
+export function useDeleteTag() {
+    const { getAuthHeaders } = useAuth();
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (tagId: number) => {
+            const response = await fetch(`/api/v1/tags/${tagId}`, {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+            });
+            if (!response.ok) throw new Error('Failed to delete tag');
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['tags'] });
+            queryClient.invalidateQueries({ queryKey: ['audioFiles'] });
+        },
+    });
+}
+
+export function useAddTagToJob(jobId: string) {
+    const { getAuthHeaders } = useAuth();
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (tagId: number) => {
+            const response = await fetch(`/api/v1/transcription/${jobId}/tags`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                body: JSON.stringify({ tag_id: tagId }),
+            });
+            if (!response.ok) throw new Error('Failed to add tag');
+            return response.json() as Promise<Tag[]>;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['audio', jobId] });
+            queryClient.invalidateQueries({ queryKey: ['audioFiles'] });
+        },
+    });
+}
+
+export function useRemoveTagFromJob(jobId: string) {
+    const { getAuthHeaders } = useAuth();
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (tagId: number) => {
+            const response = await fetch(`/api/v1/transcription/${jobId}/tags/${tagId}`, {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+            });
+            if (!response.ok) throw new Error('Failed to remove tag');
+            return response.json() as Promise<Tag[]>;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['audio', jobId] });
+            queryClient.invalidateQueries({ queryKey: ['audioFiles'] });
+        },
     });
 }

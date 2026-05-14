@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/features/auth/hooks/useAuth";
+import type { Tag } from "@/features/transcription/hooks/useAudioFiles";
 
 
 // Types
@@ -60,6 +61,7 @@ export interface AudioFile {
     merged_audio_path?: string;
     merge_status?: string;
     merge_error?: string;
+    tags?: Tag[];
     parameters?: {
         diarize?: boolean;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

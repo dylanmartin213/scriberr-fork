@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // FileService handles file system operations
@@ -31,8 +32,9 @@ func (s *fileService) SaveUpload(fileHeader *multipart.FileHeader, destDir strin
 		return "", err
 	}
 
-	// Preserve original filename, sanitizing unsafe characters.
-	originalName := sanitizeFilename(filepath.Base(fileHeader.Filename))
+	// Preserve original filename, sanitizing unsafe characters, prefixed with upload date.
+	datePrefix := time.Now().Format("060102") + "_-_"
+	originalName := datePrefix + sanitizeFilename(filepath.Base(fileHeader.Filename))
 	ext := filepath.Ext(originalName)
 	base := strings.TrimSuffix(originalName, ext)
 

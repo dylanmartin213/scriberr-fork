@@ -239,8 +239,9 @@ func (s *Service) uploadFile(sourcePath, originalFilename string) error {
 		return fmt.Errorf("failed to create upload directory: %v", err)
 	}
 
-	// Preserve original filename, sanitizing unsafe characters.
-	sanitized := sanitizeFilename(filepath.Base(originalFilename))
+	// Preserve original filename, sanitizing unsafe characters, prefixed with upload date.
+	datePrefix := time.Now().Format("060102") + "_-_"
+	sanitized := datePrefix + sanitizeFilename(filepath.Base(originalFilename))
 	ext := filepath.Ext(sanitized)
 	base := strings.TrimSuffix(sanitized, ext)
 

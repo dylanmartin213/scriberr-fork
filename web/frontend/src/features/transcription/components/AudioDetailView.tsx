@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
-import { MoreVertical, Edit2, Activity, FileText, Bot, Check, Loader2, List, AlignLeft, ArrowDownCircle, StickyNote, MessageCircle, FileImage, FileJson, Clock, AlertCircle, Users } from "lucide-react";
+import { MoreVertical, Edit2, Activity, FileText, Bot, Check, Loader2, List, AlignLeft, ArrowDownCircle, StickyNote, MessageCircle, FileImage, FileJson, Clock, AlertCircle, Users, Plus, X as XIcon } from "lucide-react";
 import { Header } from "@/components/Header";
 
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 
 // Custom Hooks
 import { useAudioDetail, useUpdateTitle, useTranscript, type TranscriptSegment } from "@/features/transcription/hooks/useAudioDetail";
+import { useTags, useAddTagToJob, useRemoveTagFromJob, useCreateTag } from "@/features/transcription/hooks/useAudioFiles";
 import { useSpeakerMappings } from "@/features/transcription/hooks/useTranscriptionSpeakers";
 import { useTranscriptDownload } from "@/features/transcription/hooks/useTranscriptDownload";
 
@@ -56,9 +57,17 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
     const [logsDialogOpen, setLogsDialogOpen] = useState(false);
     const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
 
+    // Tag state
+    const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
+    const [newTagInput, setNewTagInput] = useState("");
+
     // Data Fetching
     const { data: audioFile, isLoading, error } = useAudioDetail(audioId || "");
     const { mutate: updateTitle } = useUpdateTitle(audioId || "");
+    const { data: allTags = [] } = useTags();
+    const { mutate: addTag } = useAddTagToJob(audioId || "");
+    const { mutate: removeTag } = useRemoveTagFromJob(audioId || "");
+    const { mutate: createTag } = useCreateTag();
     // Fetch transcript & speakers here to support menu actions
     const { data: transcript } = useTranscript(audioId || "", true);
     const { data: speakerMappings = {} } = useSpeakerMappings(audioId || "", true);
@@ -263,6 +272,86 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                                                             </TooltipTrigger>
                                                             <TooltipContent>Queued</TooltipContent>
                                                         </Tooltip>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Tag Management */}
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                {(audioFile.tags || []).map(tag => (
+                                                    <span
+                                                        key={tag.id}
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                                                        style={{ backgroundColor: tag.color + "33", color: tag.color, border: `1px solid ${tag.color}55` }}
+                                                    >
+                                                        {tag.name}
+                                                        <button
+                                                            onClick={() => removeTag(tag.id)}
+                                                            className="hover:opacity-70 transition-opacity leading-none"
+                                                        >
+                                                            <XIcon className="h-3 w-3" />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                                <div className="relative">
+                                                    <button
+                                                        onClick={() => setTagPopoverOpen(v => !v)}
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-gray-400 border border-dashed border-gray-300 hover:border-gray-400 hover:text-gray-600 transition-colors dark:border-gray-700 dark:hover:border-gray-500"
+                                                    >
+                                                        <Plus className="h-3 w-3" />
+                                                        Add tag
+                                                    </button>
+                                                    {tagPopoverOpen && (
+                                                        <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-3 w-52">
+                                                            <input
+                                                                autoFocus
+                                                                value={newTagInput}
+                                                                onChange={e => setNewTagInput(e.target.value)}
+                                                                onKeyDown={e => {
+                                                                    if (e.key === 'Enter' && newTagInput.trim()) {
+                                                                        const existingTag = allTags.find(t => t.name.toLowerCase() === newTagInput.trim().toLowerCase());
+                                                                        if (existingTag) {
+                                                                            addTag(existingTag.id, { onSuccess: () => { setTagPopoverOpen(false); setNewTagInput(""); } });
+                                                                        } else {
+                                                                            createTag({ name: newTagInput.trim() }, {
+                                                                                onSuccess: (tag) => { addTag(tag.id, { onSuccess: () => { setTagPopoverOpen(false); setNewTagInput(""); } }); }
+                                                                            });
+                                                                        }
+                                                                    }
+                                                                    if (e.key === 'Escape') { setTagPopoverOpen(false); setNewTagInput(""); }
+                                                                }}
+                                                                placeholder="Tag name..."
+                                                                className="w-full text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 rounded-lg bg-transparent outline-none mb-2 focus:border-orange-400"
+                                                            />
+                                                            <div className="space-y-1 max-h-36 overflow-y-auto">
+                                                                {allTags
+                                                                    .filter(t => !audioFile.tags?.find(at => at.id === t.id))
+                                                                    .filter(t => !newTagInput || t.name.toLowerCase().includes(newTagInput.toLowerCase()))
+                                                                    .map(tag => (
+                                                                        <button
+                                                                            key={tag.id}
+                                                                            onClick={() => { addTag(tag.id, { onSuccess: () => { setTagPopoverOpen(false); setNewTagInput(""); } }); }}
+                                                                            className="w-full flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 text-left transition-colors"
+                                                                        >
+                                                                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                                                                            <span className="text-xs text-gray-700 dark:text-gray-300">{tag.name}</span>
+                                                                        </button>
+                                                                    ))}
+                                                                {newTagInput.trim() && !allTags.find(t => t.name.toLowerCase() === newTagInput.trim().toLowerCase()) && (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            createTag({ name: newTagInput.trim() }, {
+                                                                                onSuccess: (tag) => { addTag(tag.id, { onSuccess: () => { setTagPopoverOpen(false); setNewTagInput(""); } }); }
+                                                                            });
+                                                                        }}
+                                                                        className="w-full flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-950 text-left transition-colors"
+                                                                    >
+                                                                        <Plus className="h-3 w-3 text-orange-500" />
+                                                                        <span className="text-xs text-orange-600">Create "{newTagInput.trim()}"</span>
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
                                                     )}
                                                 </div>
                                             </div>

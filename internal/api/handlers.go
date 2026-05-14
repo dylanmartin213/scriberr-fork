@@ -47,6 +47,7 @@ type Handler struct {
 	noteRepo            repository.NoteRepository
 	speakerMappingRepo  repository.SpeakerMappingRepository
 	refreshTokenRepo    repository.RefreshTokenRepository
+	tagRepo             repository.TagRepository
 	taskQueue           *queue.TaskQueue
 	unifiedProcessor    *transcription.UnifiedJobProcessor
 	quickTranscription  *transcription.QuickTranscriptionService
@@ -70,6 +71,7 @@ func NewHandler(
 	noteRepo repository.NoteRepository,
 	speakerMappingRepo repository.SpeakerMappingRepository,
 	refreshTokenRepo repository.RefreshTokenRepository,
+	tagRepo repository.TagRepository,
 	taskQueue *queue.TaskQueue,
 	unifiedProcessor *transcription.UnifiedJobProcessor,
 	quickTranscription *transcription.QuickTranscriptionService,
@@ -91,6 +93,7 @@ func NewHandler(
 		noteRepo:            noteRepo,
 		speakerMappingRepo:  speakerMappingRepo,
 		refreshTokenRepo:    refreshTokenRepo,
+		tagRepo:             tagRepo,
 		taskQueue:           taskQueue,
 		unifiedProcessor:    unifiedProcessor,
 		quickTranscription:  quickTranscription,
@@ -919,6 +922,7 @@ func (h *Handler) ListTranscriptionJobs(c *gin.Context) {
 	sortBy := c.Query("sort_by")
 	sortOrder := c.Query("sort_order")
 	searchQuery := c.Query("q")
+	tagFilter := c.Query("tag")
 	updatedAfterStr := c.Query("updated_after")
 
 	var updatedAfter *time.Time
@@ -928,7 +932,7 @@ func (h *Handler) ListTranscriptionJobs(c *gin.Context) {
 		}
 	}
 
-	jobs, total, err := h.jobRepo.ListWithParams(c.Request.Context(), offset, limit, sortBy, sortOrder, searchQuery, updatedAfter)
+	jobs, total, err := h.jobRepo.ListWithParams(c.Request.Context(), offset, limit, sortBy, sortOrder, searchQuery, updatedAfter, tagFilter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list jobs"})
 		return
@@ -1219,6 +1223,32 @@ func (h *Handler) UpdateTranscriptionTitle(c *gin.Context) {
 	}
 
 	job.Title = &body.Title
+
+	// Rename the audio file on disk to match the new title (best-effort, non-fatal).
+	if job.AudioPath != "" {
+		if _, statErr := os.Stat(job.AudioPath); statErr == nil {
+			ext := filepath.Ext(job.AudioPath)
+			dir := filepath.Dir(job.AudioPath)
+			datePrefix := job.CreatedAt.Format("060102") + "_-_"
+			newBase := sanitizeFilenameForPath(body.Title)
+			newFilename := datePrefix + newBase + ext
+			newPath := filepath.Join(dir, newFilename)
+			// Collision avoidance
+			for counter := 1; ; counter++ {
+				if _, err2 := os.Stat(newPath); os.IsNotExist(err2) || newPath == job.AudioPath {
+					break
+				}
+				newFilename = fmt.Sprintf("%s%s-%d%s", datePrefix, newBase, counter, ext)
+				newPath = filepath.Join(dir, newFilename)
+			}
+			if newPath != job.AudioPath {
+				if renameErr := os.Rename(job.AudioPath, newPath); renameErr == nil {
+					job.AudioPath = newPath
+				}
+			}
+		}
+	}
+
 	if err := h.jobRepo.Update(c.Request.Context(), job); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update title"})
 		return
@@ -1231,6 +1261,15 @@ func (h *Handler) UpdateTranscriptionTitle(c *gin.Context) {
 		"created_at": job.CreatedAt,
 		"audio_path": job.AudioPath,
 	})
+}
+
+// sanitizeFilenameForPath removes characters illegal on Linux/SMB from a human title.
+func sanitizeFilenameForPath(name string) string {
+	name = strings.ReplaceAll(name, " ", "_")
+	for _, ch := range `\/:*?"<>|` {
+		name = strings.ReplaceAll(name, string(ch), "")
+	}
+	return name
 }
 
 // @Summary Delete transcription job
@@ -2898,4 +2937,98 @@ func (h *Handler) UpdateUserSettings(c *gin.Context) {
 // @Router /api/v1/events [get]
 func (h *Handler) Events(c *gin.Context) {
 	h.broadcaster.ServeHTTP(c.Writer, c.Request)
+}
+
+// ListTags returns all tags.
+func (h *Handler) ListTags(c *gin.Context) {
+	tags, err := h.tagRepo.List(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list tags"})
+		return
+	}
+	c.JSON(http.StatusOK, tags)
+}
+
+// CreateTag creates a new tag.
+func (h *Handler) CreateTag(c *gin.Context) {
+	var body struct {
+		Name  string `json:"name" binding:"required,min=1,max=100"`
+		Color string `json:"color"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	tag := models.Tag{Name: body.Name}
+	if body.Color != "" {
+		tag.Color = body.Color
+	} else {
+		tag.Color = "#6b7280"
+	}
+	if err := h.tagRepo.Create(c.Request.Context(), &tag); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Tag already exists or could not be created"})
+		return
+	}
+	c.JSON(http.StatusCreated, tag)
+}
+
+// DeleteTag deletes a tag by ID.
+func (h *Handler) DeleteTag(c *gin.Context) {
+	idStr := c.Param("id")
+	var id uint
+	if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid tag ID"})
+		return
+	}
+	if err := h.tagRepo.Delete(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Tag not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Tag deleted"})
+}
+
+// GetJobTags returns all tags attached to a job.
+func (h *Handler) GetJobTags(c *gin.Context) {
+	jobID := c.Param("id")
+	tags, err := h.tagRepo.GetJobTags(c.Request.Context(), jobID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get tags"})
+		return
+	}
+	c.JSON(http.StatusOK, tags)
+}
+
+// AddTagToJob attaches a tag to a job.
+func (h *Handler) AddTagToJob(c *gin.Context) {
+	jobID := c.Param("id")
+	var body struct {
+		TagID uint `json:"tag_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.tagRepo.AddTagToJob(c.Request.Context(), jobID, body.TagID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add tag"})
+		return
+	}
+	tags, _ := h.tagRepo.GetJobTags(c.Request.Context(), jobID)
+	c.JSON(http.StatusOK, tags)
+}
+
+// RemoveTagFromJob detaches a tag from a job.
+func (h *Handler) RemoveTagFromJob(c *gin.Context) {
+	jobID := c.Param("id")
+	idStr := c.Param("tagId")
+	var tagID uint
+	if _, err := fmt.Sscanf(idStr, "%d", &tagID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid tag ID"})
+		return
+	}
+	if err := h.tagRepo.RemoveTagFromJob(c.Request.Context(), jobID, tagID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove tag"})
+		return
+	}
+	tags, _ := h.tagRepo.GetJobTags(c.Request.Context(), jobID)
+	c.JSON(http.StatusOK, tags)
 }

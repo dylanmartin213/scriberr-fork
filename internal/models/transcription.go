@@ -7,6 +7,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// Tag represents a user-defined label that can be applied to recordings.
+type Tag struct {
+	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name      string    `json:"name" gorm:"type:varchar(100);not null;uniqueIndex"`
+	Color     string    `json:"color" gorm:"type:varchar(7);default:'#6b7280'"`
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+}
+
 // TranscriptionJob represents a transcription job record
 type TranscriptionJob struct {
 	ID                    string         `json:"id" gorm:"primaryKey;type:varchar(36)"`
@@ -33,6 +41,7 @@ type TranscriptionJob struct {
 
 	// Relationships
 	MultiTrackFiles []MultiTrackFile `json:"multi_track_files,omitempty" gorm:"foreignKey:TranscriptionJobID"`
+	Tags            []Tag            `json:"tags,omitempty" gorm:"many2many:job_tags;"`
 }
 
 // JobStatus represents the status of a transcription job

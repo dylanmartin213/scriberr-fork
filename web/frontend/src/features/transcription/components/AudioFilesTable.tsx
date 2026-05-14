@@ -10,7 +10,8 @@ import {
 	Check,
 	AlertCircle,
 	Clock,
-	X
+	X,
+	Tag as TagIcon,
 } from "lucide-react";
 import { WandAdvancedIcon } from "@/components/icons/WandAdvancedIcon";
 // Checkbox removed
@@ -36,7 +37,7 @@ import { TranscriptionConfigDialog, type WhisperXParams } from "@/components/Tra
 import { TranscribeDDialog } from "@/components/TranscribeDDialog";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/features/auth/hooks/useAuth";
-import { useAudioListInfinite, type AudioFile } from "@/features/transcription/hooks/useAudioFiles";
+import { useAudioListInfinite, useTags, type AudioFile } from "@/features/transcription/hooks/useAudioFiles";
 import { useTranscriptionEvents } from "@/features/transcription/hooks/useTranscriptionEvents";
 
 const JobStatusMonitor = memo(function JobStatusMonitor({ jobId }: { jobId: string }) {
@@ -68,6 +69,10 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 		{ id: "created_at", desc: true }
 	];
 	const [globalFilter, setGlobalFilter] = useState("");
+	const [selectedTag, setSelectedTag] = useState<string | undefined>(undefined);
+
+	// Tag data
+	const { data: availableTags = [] } = useTags();
 
 	// Query
 	const {
@@ -80,6 +85,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	} = useAudioListInfinite({
 		limit: 20, // Fetch 20 items per page
 		search: globalFilter,
+		tag: selectedTag,
 		sortBy: sorting[0]?.id,
 		sortOrder: sorting[0]?.desc ? 'desc' : 'asc'
 	});
@@ -732,13 +738,48 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	return (
 		<div className="space-y-6">
 			{/* Toolbar */}
-			<div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-				<DebouncedSearchInput
-					placeholder="Search recordings..."
-					value={globalFilter ?? ""}
-					onChange={(value) => setGlobalFilter(String(value))}
-					className="w-full sm:w-80 shadow-sm border-transparent focus:border-[var(--brand-solid)] bg-white dark:bg-zinc-900"
-				/>
+			<div className="flex flex-col gap-3">
+				<div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+					<DebouncedSearchInput
+						placeholder="Search recordings..."
+						value={globalFilter ?? ""}
+						onChange={(value) => setGlobalFilter(String(value))}
+						className="w-full sm:w-80 shadow-sm border-transparent focus:border-[var(--brand-solid)] bg-white dark:bg-zinc-900"
+					/>
+				</div>
+				{availableTags.length > 0 && (
+					<div className="flex items-center gap-2 flex-wrap">
+						<TagIcon className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+						<button
+							onClick={() => setSelectedTag(undefined)}
+							className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+								selectedTag === undefined
+									? "bg-gray-800 text-white dark:bg-gray-200 dark:text-gray-900"
+									: "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+							}`}
+						>
+							All
+						</button>
+						{availableTags.map(tag => (
+							<button
+								key={tag.id}
+								onClick={() => setSelectedTag(selectedTag === tag.name ? undefined : tag.name)}
+								className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+									selectedTag === tag.name
+										? "text-white"
+										: "text-gray-600 hover:opacity-80 dark:text-gray-300"
+								}`}
+								style={
+									selectedTag === tag.name
+										? { backgroundColor: tag.color }
+										: { backgroundColor: tag.color + "33", border: `1px solid ${tag.color}66` }
+								}
+							>
+								{tag.name}
+							</button>
+						))}
+					</div>
+				)}
 			</div>
 
 			{/* List Container */}
@@ -799,8 +840,22 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 											<h4 className="font-normal text-gray-900 dark:text-gray-100 truncate text-lg leading-tight group-hover:text-[#FF6D20] transition-colors">
 												{file.title || getFileName(file.audio_path)}
 											</h4>
-											<div className="flex items-center gap-1.5 mt-1 text-sm text-gray-500">
+											<div className="flex items-center gap-1.5 mt-1 text-sm text-gray-500 flex-wrap">
 												{formatDate(file.created_at)}
+												{file.tags && file.tags.length > 0 && (
+													<>
+														<span className="text-gray-300 dark:text-gray-600">·</span>
+														{file.tags.map(tag => (
+															<span
+																key={tag.id}
+																className="px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+																style={{ backgroundColor: tag.color + "33", color: tag.color, border: `1px solid ${tag.color}55` }}
+															>
+																{tag.name}
+															</span>
+														))}
+													</>
+												)}
 											</div>
 										</div>
 									</div>

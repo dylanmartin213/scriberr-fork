@@ -61,6 +61,7 @@ func Initialize(dbPath string) error {
 
 	// Auto migrate the schema
 	if err := DB.AutoMigrate(
+		&models.Tag{},
 		&models.TranscriptionJob{},
 		&models.TranscriptionJobExecution{},
 		&models.SpeakerMapping{},

@@ -53,7 +53,7 @@ type JobRepository interface {
 	FindWithAssociations(ctx context.Context, id string) (*models.TranscriptionJob, error)
 	FindActiveTrackJobs(ctx context.Context, parentJobID string) ([]models.TranscriptionJob, error)
 	FindLatestCompletedExecution(ctx context.Context, jobID string) (*models.TranscriptionJobExecution, error)
-	ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time) ([]models.TranscriptionJob, int64, error)
+	ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time, tagFilter string) ([]models.TranscriptionJob, int64, error)
 	ListByUser(ctx context.Context, userID uint, offset, limit int) ([]models.TranscriptionJob, int64, error)
 	UpdateTranscript(ctx context.Context, jobID string, transcript string) error
 	CreateExecution(ctx context.Context, execution *models.TranscriptionJobExecution) error
@@ -81,6 +81,7 @@ func (r *jobRepository) FindWithAssociations(ctx context.Context, id string) (*m
 	var job models.TranscriptionJob
 	err := r.db.WithContext(ctx).
 		Preload("MultiTrackFiles").
+		Preload("Tags").
 		Where("id = ?", id).
 		First(&job).Error
 	if err != nil {
@@ -89,7 +90,7 @@ func (r *jobRepository) FindWithAssociations(ctx context.Context, id string) (*m
 	return &job, nil
 }
 
-func (r *jobRepository) ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time) ([]models.TranscriptionJob, int64, error) {
+func (r *jobRepository) ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time, tagFilter string) ([]models.TranscriptionJob, int64, error) {
 	var jobs []models.TranscriptionJob
 	var count int64
 
@@ -104,6 +105,13 @@ func (r *jobRepository) ListWithParams(ctx context.Context, offset, limit int, s
 	if searchQuery != "" {
 		search := "%" + searchQuery + "%"
 		db = db.Where("title LIKE ? OR audio_path LIKE ?", search, search)
+	}
+
+	// Apply tag filter via join
+	if tagFilter != "" {
+		db = db.Joins("JOIN job_tags ON job_tags.transcription_job_id = transcription_jobs.id").
+			Joins("JOIN tags ON tags.id = job_tags.tag_id").
+			Where("tags.name = ?", tagFilter)
 	}
 
 	// Count total matching records
@@ -122,8 +130,8 @@ func (r *jobRepository) ListWithParams(ctx context.Context, offset, limit int, s
 		db = db.Order("created_at desc")
 	}
 
-	// Apply pagination
-	err := db.Offset(offset).Limit(limit).Find(&jobs).Error
+	// Apply pagination and preload tags
+	err := db.Preload("Tags").Offset(offset).Limit(limit).Find(&jobs).Error
 	if err != nil {
 		return nil, 0, err
 	}
@@ -622,4 +630,75 @@ func (r *refreshTokenRepository) Revoke(ctx context.Context, id uint) error {
 
 func (r *refreshTokenRepository) RevokeByHash(ctx context.Context, hash string) error {
 	return r.db.WithContext(ctx).Model(&models.RefreshToken{}).Where("hashed = ?", hash).Update("revoked", true).Error
+}
+
+// TagRepository handles tag CRUD and job associations.
+type TagRepository interface {
+	List(ctx context.Context) ([]models.Tag, error)
+	Create(ctx context.Context, tag *models.Tag) error
+	FindByID(ctx context.Context, id uint) (*models.Tag, error)
+	Delete(ctx context.Context, id uint) error
+	AddTagToJob(ctx context.Context, jobID string, tagID uint) error
+	RemoveTagFromJob(ctx context.Context, jobID string, tagID uint) error
+	GetJobTags(ctx context.Context, jobID string) ([]models.Tag, error)
+}
+
+type tagRepository struct {
+	db *gorm.DB
+}
+
+func NewTagRepository(db *gorm.DB) TagRepository {
+	return &tagRepository{db: db}
+}
+
+func (r *tagRepository) List(ctx context.Context) ([]models.Tag, error) {
+	var tags []models.Tag
+	err := r.db.WithContext(ctx).Order("name asc").Find(&tags).Error
+	return tags, err
+}
+
+func (r *tagRepository) Create(ctx context.Context, tag *models.Tag) error {
+	return r.db.WithContext(ctx).Create(tag).Error
+}
+
+func (r *tagRepository) FindByID(ctx context.Context, id uint) (*models.Tag, error) {
+	var tag models.Tag
+	err := r.db.WithContext(ctx).First(&tag, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tag, nil
+}
+
+func (r *tagRepository) Delete(ctx context.Context, id uint) error {
+	// Remove join table entries first, then delete the tag.
+	if err := r.db.WithContext(ctx).Exec("DELETE FROM job_tags WHERE tag_id = ?", id).Error; err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Delete(&models.Tag{}, id).Error
+}
+
+func (r *tagRepository) AddTagToJob(ctx context.Context, jobID string, tagID uint) error {
+	tag, err := r.FindByID(ctx, tagID)
+	if err != nil {
+		return err
+	}
+	job := models.TranscriptionJob{ID: jobID}
+	return r.db.WithContext(ctx).Model(&job).Association("Tags").Append(tag)
+}
+
+func (r *tagRepository) RemoveTagFromJob(ctx context.Context, jobID string, tagID uint) error {
+	tag, err := r.FindByID(ctx, tagID)
+	if err != nil {
+		return err
+	}
+	job := models.TranscriptionJob{ID: jobID}
+	return r.db.WithContext(ctx).Model(&job).Association("Tags").Delete(tag)
+}
+
+func (r *tagRepository) GetJobTags(ctx context.Context, jobID string) ([]models.Tag, error) {
+	var tags []models.Tag
+	job := models.TranscriptionJob{ID: jobID}
+	err := r.db.WithContext(ctx).Model(&job).Association("Tags").Find(&tags)
+	return tags, err
 }
